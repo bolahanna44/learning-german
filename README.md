@@ -62,7 +62,8 @@ OPENAI_API_KEY=sk-... npm run enrich:words -- --escape 5 --offset 0
 ```
 
 Parameters:
-- `--escape` – how many words to process in this batch (name left as requested).
-- `--offset` – how many words to skip before processing.
+- `--escape` – maximum number of pending words to enrich this run (still named as requested).
+- `--offset` – how many pending words to skip before processing.
+- `--batch` – number of words to handle per chunk (default 5).
 
-Results are stored in the `words` table inside `learning-german.sqlite` (`word`, `sentence`, `translation`, `updated_at`).
+The script first ensures every Wortliste entry exists in `words`, then fills in any rows missing sentences/translations (with retries + batching). Results live in `learning-german.sqlite` (`word`, `sentence`, `translation`, `updated_at`).

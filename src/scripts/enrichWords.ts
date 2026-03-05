@@ -4,21 +4,19 @@ import Database from 'better-sqlite3';
 import minimist from 'minimist';
 import OpenAI from 'openai';
 
-type WordRecord = {
-  word: string;
-  sentence: string;
-  translation: string;
-};
-
 const args = minimist(process.argv.slice(2));
-const escapeCount = Number(args.escape ?? 20);
+const escapeCount = Number(args.escape ?? 25);
 const offset = Number(args.offset ?? 0);
+const batchSize = Number(args.batch ?? 5);
 
 if (!Number.isFinite(escapeCount) || escapeCount <= 0) {
   throw new Error('Please provide a positive number for --escape');
 }
 if (!Number.isFinite(offset) || offset < 0) {
   throw new Error('Please provide a non-negative number for --offset');
+}
+if (!Number.isFinite(batchSize) || batchSize <= 0) {
+  throw new Error('Please provide a positive number for --batch');
 }
 
 const apiKey = process.env.OPENAI_API_KEY;
@@ -31,16 +29,13 @@ if (!fs.existsSync(wordlistPath)) {
   throw new Error(`Word list not found at ${wordlistPath}`);
 }
 
-const rawWordList = fs.readFileSync(wordlistPath, 'utf-8');
-const words = extractWords(rawWordList);
+const wordList = fs
+  .readFileSync(wordlistPath, 'utf-8')
+  .split(/\r?\n/)
+  .map((line) => line.trim())
+  .filter(Boolean);
 
-if (offset >= words.length) {
-  console.log(`Offset ${offset} beyond word count (${words.length}). Nothing to do.`);
-  process.exit(0);
-}
-
-const slice = words.slice(offset, offset + escapeCount);
-console.log(`Processing ${slice.length} words (offset ${offset}).`);
+console.log(`Loaded ${wordList.length} words from ${wordlistPath}`);
 
 const client = new OpenAI({ apiKey });
 const db = new Database('learning-german.sqlite');
@@ -48,72 +43,94 @@ const db = new Database('learning-german.sqlite');
 db.exec(`
   CREATE TABLE IF NOT EXISTS words (
     word TEXT PRIMARY KEY,
-    sentence TEXT NOT NULL,
+    sentence TEXT NOT NULL DEFAULT '',
     translation TEXT NOT NULL DEFAULT '',
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `);
 
-const wordsColumns = db.prepare("PRAGMA table_info(words)").all() as Array<{ name: string }>;
-if (!wordsColumns.some(col => col.name === 'translation')) {
-  db.exec('ALTER TABLE words ADD COLUMN translation TEXT NOT NULL DEFAULT ""');
+const wordsColumns = db.prepare('PRAGMA table_info(words)').all() as Array<{ name: string }>;
+if (!wordsColumns.some((col) => col.name === 'translation')) {
+  db.exec("ALTER TABLE words ADD COLUMN translation TEXT NOT NULL DEFAULT ''");
 }
 
-const insertStatement = db.prepare(
-  `INSERT INTO words(word, sentence, translation, updated_at) VALUES(?, ?, ?, CURRENT_TIMESTAMP)
-   ON CONFLICT(word) DO UPDATE SET sentence=excluded.sentence, translation=excluded.translation, updated_at=CURRENT_TIMESTAMP`
+const insertBlank = db.prepare(
+  `INSERT INTO words(word, sentence, translation, updated_at)
+   VALUES(?, '', '', CURRENT_TIMESTAMP)
+   ON CONFLICT(word) DO NOTHING`
+);
+
+const upsertSentence = db.prepare(
+  `UPDATE words
+     SET sentence = ?,
+         translation = ?,
+         updated_at = CURRENT_TIMESTAMP
+   WHERE word = ?`
+);
+
+// Seed every word so we can track which entries still need sentences.
+for (const word of wordList) {
+  insertBlank.run(word);
+}
+
+const pendingRows = db
+  .prepare("SELECT word FROM words WHERE sentence = '' OR translation = '' ORDER BY word")
+  .all() as Array<{ word: string }>;
+const pendingWords = pendingRows.map((row) => row.word);
+
+if (pendingWords.length === 0) {
+  console.log('No pending words. Everything is already populated.');
+  process.exit(0);
+}
+
+const workSet = pendingWords.slice(offset, offset + escapeCount);
+console.log(
+  `Need sentences/translations for ${pendingWords.length} words. Processing ${workSet.length} (offset ${offset}).`
 );
 
 async function main() {
-  for (const word of slice) {
-    try {
-      const { sentence, translation } = await generateSentence(client, word);
-      insertStatement.run(word, sentence.trim(), translation.trim());
-      console.log(`✔ Saved sentence for "${word}": ${sentence.trim()} => ${translation.trim()}`);
-    } catch (error) {
-      console.error(`✖ Failed for "${word}":`, (error as Error).message);
+  for (let i = 0; i < workSet.length; i += batchSize) {
+    const batch = workSet.slice(i, i + batchSize);
+    console.log(`\nBatch ${i / batchSize + 1}: ${batch.length} words`);
+    for (const word of batch) {
+      try {
+        const { sentence, translation } = await withRetry(() => generateSentence(client, word), 3);
+        upsertSentence.run(sentence.trim(), translation.trim(), word);
+        console.log(`✔ ${word} => ${sentence.trim()} // ${translation.trim()}`);
+      } catch (error) {
+        console.error(`✖ ${word}: ${(error as Error).message}`);
+      }
     }
   }
 }
 
-function extractWords(text: string): string[] {
-  const matches = new Set<string>();
-  const articlePattern = /\b(?:der|die|das)\s+[A-Za-zÄÖÜäöüß\-]+/g;
-  const standalonePattern = /\b[A-Za-zÄÖÜäöüß]{3,}[A-Za-zÄÖÜäöüß\-]+/g;
-
-  const addMatch = (token: string | null) => {
-    if (!token) return;
-    const cleaned = token
-      .replace(/[.,;:()\[\]"“”]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (!cleaned) return;
-    if (/\d/.test(cleaned)) return;
-    if (cleaned.startsWith('---') || cleaned.includes('|')) return;
-    matches.add(cleaned);
-  };
-
-  let result: RegExpExecArray | null;
-  while ((result = articlePattern.exec(text)) !== null) {
-    addMatch(result[0]);
+async function withRetry<T>(fn: () => Promise<T>, retries: number): Promise<T> {
+  let attempt = 0;
+  while (true) {
+    try {
+      attempt += 1;
+      return await fn();
+    } catch (err) {
+      if (attempt >= retries) {
+        throw err;
+      }
+      const delay = Math.min(4000, 500 * Math.pow(2, attempt));
+      console.warn(`Retry ${attempt}/${retries} after ${(delay / 1000).toFixed(1)}s ...`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
   }
-  while ((result = standalonePattern.exec(text)) !== null) {
-    addMatch(result[0]);
-  }
-
-  return Array.from(matches);
 }
 
-async function generateSentence(client: OpenAI, word: string): Promise<{ sentence: string; translation: string }> {
-  const prompt = `Du bekommst ein deutsches Lexikoneintrag. Gib mir nur gültiges JSON der Form {"sentence":"...","translation":"..."}. 
-- "sentence": ein sehr häufiger, idiomatischer deutscher Satz mit dem Wort "${word}".
-- "translation": eine natürliche englische Übersetzung dieses Satzes.
-Keine Erklärungen.`;
-  const response = await client.chat.completions.create({
+async function generateSentence(
+  clientInstance: OpenAI,
+  word: string
+): Promise<{ sentence: string; translation: string }> {
+  const prompt = `Return JSON {"sentence":"...","translation":"..."} where "sentence" is a common German sentence that naturally includes "${word}" and "translation" is the natural English translation of that sentence.`;
+  const response = await clientInstance.chat.completions.create({
     model: 'gpt-4o-mini',
     temperature: 0.2,
     messages: [
-      { role: 'system', content: 'Du bist ein hilfreicher deutscher Satzgenerator.' },
+      { role: 'system', content: 'Respond with JSON only. Do not add commentary.' },
       { role: 'user', content: prompt },
     ],
   });
@@ -123,15 +140,18 @@ Keine Erklärungen.`;
     throw new Error('OpenAI returned empty content');
   }
 
+  let parsed: { sentence?: string; translation?: string };
   try {
-    const parsed = JSON.parse(content) as { sentence?: string; translation?: string };
-    if (!parsed.sentence || !parsed.translation) {
-      throw new Error('JSON fehlte sentence oder translation');
-    }
-    return { sentence: parsed.sentence, translation: parsed.translation };
+    parsed = JSON.parse(content);
   } catch (err) {
     throw new Error(`Failed to parse JSON: ${(err as Error).message}. Raw: ${content}`);
   }
+
+  if (!parsed.sentence || !parsed.translation) {
+    throw new Error('Response missing sentence or translation');
+  }
+
+  return { sentence: parsed.sentence, translation: parsed.translation };
 }
 
 main().catch((err) => {
