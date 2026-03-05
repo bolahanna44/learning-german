@@ -29,11 +29,22 @@ const levelDefinitions: LevelDefinition[] = [
   { code: 'B1.2', title: 'Sicher kommunizieren', field: 'b12_progress', summary: 'Komplexere Texte, Vorbereitung auf Zertifikate.' },
 ];
 
+const wordStatsByLevelStmt = db.prepare(`SELECT LOWER(word_level) as lvl, COUNT(*) as total, SUM(CASE WHEN is_learned = 1 THEN 1 ELSE 0 END) as learned FROM words GROUP BY LOWER(word_level)`);
+
+function getWordStatsMap() {
+  const rows = wordStatsByLevelStmt.all() as Array<{ lvl: string; total: number; learned: number | null }>;
+  const map = new Map<string, { total: number; learned: number }>();
+  rows.forEach((row) => {
+    map.set(row.lvl, { total: row.total, learned: row.learned ?? 0 });
+  });
+  return map;
+}
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
 
 app.use(
   session({
@@ -102,12 +113,100 @@ app.post('/register', async (req, res) => {
 });
 
 app.get('/dashboard', ensureAuthenticated, (req, res) => {
-    const user = req.user as UserRecord | undefined;
-  const levels = levelDefinitions.map((definition) => ({
-    ...definition,
-    completion: Number(user?.[definition.field] ?? 0),
-  }));
+  const user = req.user as UserRecord | undefined;
+  const wordStatsMap = getWordStatsMap();
+  const levels = levelDefinitions.map((definition) => {
+    const key = definition.code.toLowerCase();
+    const stats = wordStatsMap.get(key) ?? { total: 0, learned: 0 };
+    const learnedPercent = stats.total ? Math.round((stats.learned / stats.total) * 100) : 0;
+    return {
+      ...definition,
+      completion: Number(user?.[definition.field] ?? 0),
+      wordStats: stats,
+      learnedPercent,
+      flashcardHref: key === 'a2.1' ? '/flashcards/A2.1' : undefined,
+    };
+  });
   res.render('dashboard', { levels });
+});
+
+app.get('/flashcards/:level', ensureAuthenticated, (req, res) => {
+  const levelParamRaw = req.params.level;
+  const levelParam = typeof levelParamRaw === 'string' ? levelParamRaw : 'A2.1';
+  const normalized = levelParam.toLowerCase();
+  const words = db
+    .prepare(
+      `SELECT word, word_type, word_translation, sentence, translation, success_streak, is_learned
+         FROM words
+        WHERE lower(word_level) = ?
+        ORDER BY word`
+    )
+    .all(normalized) as Array<{
+      word: string;
+      word_type: string;
+      word_translation: string;
+      sentence: string;
+      translation: string;
+      success_streak: number;
+      is_learned: number;
+    }>;
+
+  const totalWords = words.length;
+  const learnedWords = words.filter((word) => word.is_learned === 1).length;
+  const deck = words.filter((word) => word.is_learned === 0);
+
+  res.render('flashcards', {
+    levelCode: levelParam.toUpperCase(),
+    totalWords,
+    learnedWords,
+    wordsJson: JSON.stringify(deck),
+  });
+});
+
+app.post('/api/flashcards/answer', ensureAuthenticated, (req, res) => {
+  const { word, level, result } = req.body ?? {};
+  if (!word || !level || (result !== 'correct' && result !== 'incorrect')) {
+    return res.status(400).json({ error: 'word, level and result are required' });
+  }
+
+  const normalized = String(level).toLowerCase();
+  const current = db
+    .prepare(
+      `SELECT success_streak, is_learned
+         FROM words
+        WHERE word = ? AND lower(word_level) = ?`
+    )
+    .get(word, normalized) as { success_streak: number; is_learned: number } | undefined;
+
+  if (!current) {
+    return res.status(404).json({ error: 'Word not found' });
+  }
+
+  let streak = current.success_streak || 0;
+  let learnedFlag = current.is_learned || 0;
+
+  if (result === 'correct') {
+    streak += 1;
+    if (streak >= 5) {
+      learnedFlag = 1;
+      streak = 5;
+    }
+  } else {
+    streak = 0;
+    learnedFlag = 0;
+  }
+
+  db.prepare('UPDATE words SET success_streak = ?, is_learned = ?, updated_at = CURRENT_TIMESTAMP WHERE word = ? AND lower(word_level) = ?').run(streak, learnedFlag, word, normalized);
+
+  const stats = db
+    .prepare('SELECT COUNT(*) as total, SUM(CASE WHEN is_learned = 1 THEN 1 ELSE 0 END) as learned FROM words WHERE lower(word_level) = ?')
+    .get(normalized) as { total: number; learned: number | null };
+
+  return res.json({
+    successStreak: streak,
+    isLearned: learnedFlag === 1,
+    stats: { total: stats.total, learned: stats.learned ?? 0 },
+  });
 });
 
 app.post('/logout', (req, res, next) => {

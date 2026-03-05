@@ -50,3 +50,27 @@ grok http 4174
 ```
 
 Share the HTTPS URL ngrok prints so others can visit the login page.
+
+## Word sentence enrichment
+
+A helper script (`src/scripts/enrichWords.ts`) ingests the alphabetic word list (`data/german-wordlist.txt`) and asks OpenAI for a high-frequency German sentence that naturally contains each word.
+
+Usage:
+
+```bash
+OPENAI_API_KEY=sk-... npm run enrich:words -- --escape 5 --offset 0
+```
+
+Parameters:
+- `--escape` – maximum number of pending words to enrich this run (still named as requested).
+- `--offset` – how many pending words to skip before processing.
+- `--batch` – number of words to handle per chunk (default 5).
+
+The script first syncs every Wortliste entry (and its part of speech) into `words`, then fills in any rows missing the base word translation, the German sentence, or the English sentence translation (batched with retries). Columns now include `word`, `word_type`, `word_translation`, `word_level`, `sentence`, `translation`, `updated_at`.
+
+### Flashcards & Spaced Repetition
+
+- Visit `/flashcards/A2.1` (or click the A2.1 card on the dashboard) to drill the first 100 words with a flip-card UI.
+- Each ✅ increments the streak; five correct answers in a row mark the word as learned and remove it from the deck.
+- Each ❌ resets the streak and requeues the card near the front.
+- Learned counts feed back into the dashboard progress display.
