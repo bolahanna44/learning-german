@@ -50,3 +50,19 @@ grok http 4174
 ```
 
 Share the HTTPS URL ngrok prints so others can visit the login page.
+
+## Word sentence enrichment
+
+A helper script (`src/scripts/enrichWords.ts`) ingests the alphabetic word list (`data/german-wordlist.txt`) and asks OpenAI for a high-frequency German sentence that naturally contains each word.
+
+Usage:
+
+```bash
+OPENAI_API_KEY=sk-... npm run enrich:words -- --escape 5 --offset 0
+```
+
+Parameters:
+- `--escape` – how many words to process in this batch (name left as requested).
+- `--offset` – how many words to skip before processing.
+
+Results are stored in the `words` table inside `learning-german.sqlite` (`word` + `sentence` columns, upserted per batch).
