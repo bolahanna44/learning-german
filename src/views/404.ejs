@@ -2,6 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Not found</title>
     <style>
       body {
@@ -24,6 +25,19 @@
         color: #2563eb;
         text-decoration: none;
         font-weight: 600;
+      }
+    
+      @media (max-width: 520px) {
+        body {
+          padding: 16px;
+        }
+        .card, .wrap, .box {
+          padding: 24px 18px;
+          width: 100% !important;
+        }
+        h1 {
+          font-size: 1.35rem;
+        }
       }
     </style>
   </head>
