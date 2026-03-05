@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Flashcards · <%= levelCode %></title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        margin: 0;
+        min-height: 100vh;
+        background: radial-gradient(circle at top, #e0f2fe, #ede9fe);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 32px;
+      }
+      .shell {
+        width: min(800px, 94vw);
+        background: #fff;
+        border-radius: 24px;
+        padding: 36px;
+        box-shadow: 0 30px 80px rgba(15, 23, 42, 0.18);
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        justify-content: space-between;
+        align-items: center;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 1.4rem;
+        color: #0f172a;
+      }
+      header a {
+        color: #0ea5e9;
+        text-decoration: none;
+        font-weight: 600;
+      }
+      .stats {
+        margin-top: 8px;
+        color: #475569;
+        font-size: 0.95rem;
+      }
+      .card {
+        margin-top: 30px;
+        border-radius: 24px;
+        padding: 32px;
+        background: linear-gradient(135deg, #0ea5e9, #6366f1);
+        color: #fff;
+        min-height: 300px;
+        position: relative;
+        box-shadow: 0 25px 50px rgba(14, 165, 233, 0.25);
+      }
+      .card h2 {
+        margin-top: 0;
+        font-size: 2rem;
+      }
+      .sentence {
+        font-size: 1.1rem;
+        line-height: 1.5;
+      }
+      .translation-label {
+        margin-top: 24px;
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        opacity: 0.9;
+      }
+      .back-text {
+        font-size: 1.1rem;
+        line-height: 1.5;
+      }
+      .card button.flip {
+        position: absolute;
+        right: 24px;
+        top: 24px;
+        border: none;
+        background: rgba(255, 255, 255, 0.2);
+        color: #fff;
+        padding: 8px 16px;
+        border-radius: 999px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+      .actions {
+        margin-top: 24px;
+        display: flex;
+        gap: 16px;
+      }
+      .actions button {
+        flex: 1;
+        border: none;
+        padding: 14px 18px;
+        font-size: 1.1rem;
+        border-radius: 16px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+      .actions button.known {
+        background: #10b981;
+        color: #fff;
+      }
+      .actions button.practice {
+        background: #f97316;
+        color: #fff;
+      }
+      .empty-state {
+        text-align: center;
+        padding: 60px 0;
+        color: #475569;
+      }
+      @media (max-width: 640px) {
+        body { padding: 16px; }
+        .shell { padding: 24px; }
+        .card { padding: 24px; }
+        .actions { flex-direction: column; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <div>
+          <h1>Flashcards · <%= levelCode %></h1>
+          <p class="stats">Gelernt: <span id="learnedCount"><%= learnedWords %></span> / <span id="totalCount"><%= totalWords %></span></p>
+        </div>
+        <a href="/dashboard">← Zurück zum Dashboard</a>
+      </header>
+
+      <div id="card" class="card" hidden>
+        <button class="flip" type="button" id="flipButton">Flip</button>
+        <div class="front">
+          <h2 id="wordText"></h2>
+          <p class="sentence" id="sentenceText"></p>
+        </div>
+        <div class="back" hidden>
+          <div class="translation-label">English meaning</div>
+          <p class="back-text" id="wordTranslationText"></p>
+          <div class="translation-label">Sentence translation</div>
+          <p class="back-text" id="sentenceTranslationText"></p>
+        </div>
+      </div>
+
+      <div id="emptyState" class="empty-state" hidden>
+        <h2>Alles gelernt! 🎉</h2>
+        <p>Es gibt aktuell keine offenen Karten für dieses Level.</p>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="practice" id="unknownButton">❌ Ich brauche Wiederholung</button>
+        <button type="button" class="known" id="knownButton">✅ Ich kenne dieses Wort</button>
+      </div>
+    </div>
+
+    <script>
+      const levelCode = '<%= levelCode %>';
+      const deck = <%- wordsJson %>;
+      let queue = deck.slice();
+      let currentCard = null;
+      let learnedCount = Number(<%= learnedWords %>);
+      const totalCount = Number(<%= totalWords %>);
+
+      const cardEl = document.getElementById('card');
+      const emptyEl = document.getElementById('emptyState');
+      const wordEl = document.getElementById('wordText');
+      const sentenceEl = document.getElementById('sentenceText');
+      const wordTranslationEl = document.getElementById('wordTranslationText');
+      const sentenceTranslationEl = document.getElementById('sentenceTranslationText');
+      const learnedCountEl = document.getElementById('learnedCount');
+      const flipButton = document.getElementById('flipButton');
+
+      function updateVisibility() {
+        if (queue.length === 0) {
+          cardEl.hidden = true;
+          emptyEl.hidden = false;
+        } else {
+          cardEl.hidden = false;
+          emptyEl.hidden = true;
+        }
+      }
+
+      function renderCard(card) {
+        if (!card) {
+          updateVisibility();
+          return;
+        }
+        wordEl.textContent = card.word;
+        sentenceEl.textContent = card.sentence;
+        wordTranslationEl.textContent = card.word_translation;
+        sentenceTranslationEl.textContent = card.translation;
+        cardEl.querySelector('.front').hidden = false;
+        cardEl.querySelector('.back').hidden = true;
+      }
+
+      function showNextCard() {
+        if (queue.length === 0) {
+          currentCard = null;
+          updateVisibility();
+          return;
+        }
+        currentCard = queue.shift();
+        renderCard(currentCard);
+      }
+
+      async function submitAnswer(result) {
+        if (!currentCard) return;
+        try {
+          const response = await fetch('/api/flashcards/answer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ word: currentCard.word, level: levelCode, result }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            console.error(data.error || 'Failed to record answer');
+            return;
+          }
+
+          if (data.isLearned) {
+            learnedCount = data.stats.learned;
+            learnedCountEl.textContent = learnedCount;
+          }
+
+          if (result === 'correct' && data.isLearned) {
+            // remove card completely
+          } else if (result === 'correct') {
+            currentCard.success_streak = data.successStreak;
+            queue.push(currentCard);
+          } else {
+            currentCard.success_streak = 0;
+            queue.splice(Math.min(3, queue.length), 0, currentCard);
+          }
+          showNextCard();
+        } catch (err) {
+          console.error(err);
+        }
+      }
+
+      flipButton.addEventListener('click', () => {
+        const front = cardEl.querySelector('.front');
+        const back = cardEl.querySelector('.back');
+        front.hidden = !front.hidden;
+        back.hidden = !back.hidden;
+      });
+
+      document.getElementById('knownButton').addEventListener('click', () => submitAnswer('correct'));
+      document.getElementById('unknownButton').addEventListener('click', () => submitAnswer('incorrect'));
+
+      if (queue.length === 0) {
+        cardEl.hidden = true;
+        emptyEl.hidden = false;
+      } else {
+        cardEl.hidden = false;
+        emptyEl.hidden = true;
+        showNextCard();
+      }
+    </script>
+  </body>
+</html>

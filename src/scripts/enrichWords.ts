@@ -8,6 +8,7 @@ const args = minimist(process.argv.slice(2));
 const escapeCount = Number(args.escape ?? 25);
 const offset = Number(args.offset ?? 0);
 const batchSize = Number(args.batch ?? 5);
+const TARGET_LEVEL = 'a2.1';
 
 if (!Number.isFinite(escapeCount) || escapeCount <= 0) {
   throw new Error('Please provide a positive number for --escape');
@@ -53,7 +54,7 @@ const client = new OpenAI({ apiKey });
 const db = new Database('learning-german.sqlite');
 
 const wordsColumns = db.prepare('PRAGMA table_info(words)').all() as Array<{ name: string }>;
-const requiredColumns = ['sentence', 'translation', 'word_translation', 'word_type', 'word_level'];
+const requiredColumns = ['sentence', 'translation', 'word_translation', 'word_type', 'word_level', 'success_streak', 'is_learned'];
 for (const column of requiredColumns) {
   if (!wordsColumns.some((col) => col.name === column)) {
     throw new Error(`Column "${column}" missing on words table. Run \`npm run db:migrate\` first.`);
@@ -61,12 +62,16 @@ for (const column of requiredColumns) {
 }
 
 const insertBlank = db.prepare(
-  `INSERT INTO words(word, word_type, word_translation, sentence, translation, updated_at)
-   VALUES(?, ?, '', '', '', CURRENT_TIMESTAMP)
+  `INSERT INTO words(word, word_type, word_translation, word_level, sentence, translation, updated_at)
+   VALUES(?, ?, '', ?, '', '', CURRENT_TIMESTAMP)
    ON CONFLICT(word) DO UPDATE SET
      word_type = CASE
        WHEN words.word_type IS NULL OR words.word_type = '' THEN excluded.word_type
        ELSE words.word_type
+     END,
+     word_level = CASE
+       WHEN words.word_level IS NULL OR words.word_level = '' THEN excluded.word_level
+       ELSE words.word_level
      END`
 );
 
@@ -75,6 +80,7 @@ const upsertEntry = db.prepare(
      SET sentence = ?,
          translation = ?,
          word_translation = ?,
+         word_level = ?,
          word_type = CASE
             WHEN word_type IS NULL OR word_type = '' THEN ?
             ELSE word_type
@@ -85,23 +91,25 @@ const upsertEntry = db.prepare(
 
 // Seed every word with its type so the DB stays aligned with the Wortliste.
 for (const entry of wordEntries) {
-  insertBlank.run(entry.word, entry.wordType);
+  insertBlank.run(entry.word, entry.wordType, TARGET_LEVEL);
 }
 
 const pendingRows = db
   .prepare(
-    `SELECT word, word_type, word_translation, sentence, translation
+    `SELECT word, word_type, word_translation, word_level, sentence, translation
        FROM words
       WHERE word_translation = ''
          OR sentence = ''
          OR translation = ''
          OR word_type = ''
+         OR word_level = ''
       ORDER BY word`
   )
   .all() as Array<{
   word: string;
   word_type: string;
   word_translation: string;
+  word_level: string;
   sentence: string;
   translation: string;
 }>;
@@ -128,11 +136,12 @@ async function main() {
           result.sentence.trim(),
           result.sentenceTranslation.trim(),
           result.wordTranslation.trim(),
+          TARGET_LEVEL,
           inferredType,
           row.word
         );
         console.log(
-          `✔ ${row.word} (${inferredType}) => ${result.wordTranslation.trim()} | ${result.sentence.trim()} // ${result.sentenceTranslation.trim()}`
+          `✔ ${row.word} (${inferredType}, ${TARGET_LEVEL}) => ${result.wordTranslation.trim()} | ${result.sentence.trim()} // ${result.sentenceTranslation.trim()}`
         );
       } catch (error) {
         console.error(`✖ ${row.word}: ${(error as Error).message}`);
