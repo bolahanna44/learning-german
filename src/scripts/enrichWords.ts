@@ -40,18 +40,12 @@ console.log(`Loaded ${wordList.length} words from ${wordlistPath}`);
 const client = new OpenAI({ apiKey });
 const db = new Database('learning-german.sqlite');
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS words (
-    word TEXT PRIMARY KEY,
-    sentence TEXT NOT NULL DEFAULT '',
-    translation TEXT NOT NULL DEFAULT '',
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )
-`);
-
 const wordsColumns = db.prepare('PRAGMA table_info(words)').all() as Array<{ name: string }>;
+if (wordsColumns.length === 0) {
+  throw new Error('Table \"words\" is missing. Run `npm run db:migrate` first.');
+}
 if (!wordsColumns.some((col) => col.name === 'translation')) {
-  db.exec("ALTER TABLE words ADD COLUMN translation TEXT NOT NULL DEFAULT ''");
+  throw new Error('Column \"translation\" missing on words table. Run `npm run db:migrate` first.');
 }
 
 const insertBlank = db.prepare(

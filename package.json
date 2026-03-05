@@ -7,7 +7,8 @@
     "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
     "start": "node dist/app.js",
     "build": "tsc",
-    "enrich:words": "ts-node src/scripts/enrichWords.ts"
+    "enrich:words": "ts-node src/scripts/enrichWords.ts",
+    "db:migrate": "knex migrate:latest"
   },
   "keywords": [],
   "author": "",
@@ -19,6 +20,7 @@
     "ejs": "^4.0.1",
     "express": "^5.2.1",
     "express-session": "^1.19.0",
+    "knex": "^3.1.0",
     "minimist": "^1.2.8",
     "openai": "^6.26.0",
     "passport": "^0.7.0",
