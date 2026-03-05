@@ -46,6 +46,47 @@
         font-size: 1rem;
         cursor: pointer;
       }
+      .levels {
+        list-style: none;
+        padding: 0;
+        margin: 32px 0;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .level-card {
+        text-align: left;
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        padding: 20px;
+        background: #f8fafc;
+      }
+      .level-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-weight: 600;
+        color: #0f172a;
+      }
+      .level-head span:last-child {
+        color: #0369a1;
+      }
+      .progress {
+        height: 10px;
+        border-radius: 999px;
+        background: #e2e8f0;
+        margin: 12px 0;
+        overflow: hidden;
+      }
+      .progress-bar {
+        height: 100%;
+        background: linear-gradient(90deg, #0ea5e9, #6366f1);
+      }
+      .level-card p {
+        margin: 0;
+        color: #475569;
+        font-size: 0.95rem;
+      }
     
       @media (max-width: 520px) {
         body {
@@ -65,6 +106,20 @@
     <div class="wrap">
       <h1>Hallo <%= currentUser?.email %>!</h1>
       <p>Welcome to the Learning German dashboard. From here you can plug in future vocabulary or progress tracking features.</p>
+      <ul class="levels">
+        <% levels.forEach(function(level) { %>
+          <li class="level-card">
+            <div class="level-head">
+              <span><%= level.code %> · <%= level.title %></span>
+              <span><%= level.completion %>%</span>
+            </div>
+            <div class="progress">
+              <div class="progress-bar" style="width:<%= level.completion %>%"></div>
+            </div>
+            <p><%= level.summary %></p>
+          </li>
+        <% }) %>
+      </ul>
       <form method="POST" action="/logout">
         <button type="submit">Log out</button>
       </form>

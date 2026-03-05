@@ -10,6 +10,23 @@ const SQLiteStore = SQLiteStoreFactory(session);
 const app = express();
 const PORT = Number(process.env.PORT) || 4174;
 
+type LevelProgress = {
+  code: string;
+  title: string;
+  completion: number;
+  summary: string;
+};
+
+const levelProgress: LevelProgress[] = [
+  { code: 'A1.1', title: 'Grundlagen', completion: 45, summary: 'Alphabet, Grüßen, Zahlen und einfache Sätze.' },
+  { code: 'A1.2', title: 'Alltag', completion: 20, summary: 'Familie, Einkaufen, Uhrzeiten und Routinen.' },
+  { code: 'A2.1', title: 'Ausdruck erweitern', completion: 10, summary: 'Vergangenheit, Freizeit und Stadtleben.' },
+  { code: 'A2.2', title: 'Selbstständig sprechen', completion: 0, summary: 'Gesundheit, Reisen, Arbeitssituationen.' },
+  { code: 'B1.1', title: 'Kompetent berichten', completion: 0, summary: 'Meinungen begründen, Nachrichten verstehen.' },
+  { code: 'B1.2', title: 'Sicher kommunizieren', completion: 0, summary: 'Komplexere Texte, Vorbereitung auf Zertifikate.' },
+];
+
+
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.static(path.join(__dirname, '..', 'public')));
@@ -82,7 +99,7 @@ app.post('/register', async (req, res) => {
 });
 
 app.get('/dashboard', ensureAuthenticated, (req, res) => {
-  res.render('dashboard');
+  res.render('dashboard', { levels: levelProgress });
 });
 
 app.post('/logout', (req, res, next) => {
