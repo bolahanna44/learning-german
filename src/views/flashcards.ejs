@@ -53,15 +53,37 @@
       .card {
         margin-top: 30px;
         border-radius: 24px;
-        padding: 32px;
         background: linear-gradient(135deg, #0ea5e9, #6366f1);
         color: #fff;
-        min-height: 300px;
+        min-height: 320px;
         position: relative;
         box-shadow: 0 25px 50px rgba(14, 165, 233, 0.25);
+        perspective: 1200px;
+      }
+      .card-inner {
+        position: relative;
+        border-radius: 24px;
+        min-height: 320px;
+        transform-style: preserve-3d;
+        transition: transform 450ms ease;
+      }
+      .card-inner.is-flipped {
+        transform: rotateY(180deg);
+      }
+      .card-face {
+        position: absolute;
+        inset: 0;
+        padding: 32px;
+        backface-visibility: hidden;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+      .card-face.back {
+        transform: rotateY(180deg);
       }
       .card h2 {
-        margin-top: 0;
+        margin: 0;
         font-size: 2rem;
       }
       .sentence {
@@ -69,11 +91,11 @@
         line-height: 1.5;
       }
       .translation-label {
-        margin-top: 24px;
+        margin-top: 8px;
         font-size: 0.85rem;
         text-transform: uppercase;
         letter-spacing: 0.08em;
-        opacity: 0.9;
+        opacity: 0.85;
       }
       .back-text {
         font-size: 1.1rem;
@@ -90,28 +112,27 @@
         border-radius: 999px;
         cursor: pointer;
         font-weight: 600;
+        z-index: 3;
       }
-      .actions {
-        margin-top: 24px;
-        display: flex;
-        gap: 16px;
-      }
-      .actions button {
-        flex: 1;
+      .corner-btn {
+        position: absolute;
+        bottom: -22px;
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
         border: none;
-        padding: 14px 18px;
-        font-size: 1.1rem;
-        border-radius: 16px;
+        font-size: 1.6rem;
+        color: #fff;
         cursor: pointer;
-        font-weight: 600;
+        box-shadow: 0 15px 30px rgba(15, 23, 42, 0.2);
       }
-      .actions button.known {
-        background: #10b981;
-        color: #fff;
-      }
-      .actions button.practice {
+      .corner-btn.practice {
+        left: -18px;
         background: #f97316;
-        color: #fff;
+      }
+      .corner-btn.known {
+        right: -18px;
+        background: #10b981;
       }
       .empty-state {
         text-align: center;
@@ -121,8 +142,7 @@
       @media (max-width: 640px) {
         body { padding: 16px; }
         .shell { padding: 24px; }
-        .card { padding: 24px; }
-        .actions { flex-direction: column; }
+        .card-face { padding: 24px; }
       }
     </style>
   </head>
@@ -137,27 +157,30 @@
       </header>
 
       <div id="card" class="card" hidden>
-        <button class="flip" type="button" id="flipButton">Flip</button>
-        <div class="front">
-          <h2 id="wordText"></h2>
-          <p class="sentence" id="sentenceText"></p>
+        <div class="card-inner" id="cardInner">
+          <button class="flip" type="button" id="flipButton">Flip</button>
+          <div class="card-face front">
+            <h2 id="wordText"></h2>
+            <p class="sentence" id="sentenceText"></p>
+          </div>
+          <div class="card-face back">
+            <div>
+              <div class="translation-label">English meaning</div>
+              <p class="back-text" id="wordTranslationText"></p>
+            </div>
+            <div>
+              <div class="translation-label">Sentence translation</div>
+              <p class="back-text" id="sentenceTranslationText"></p>
+            </div>
+          </div>
         </div>
-        <div class="back" hidden>
-          <div class="translation-label">English meaning</div>
-          <p class="back-text" id="wordTranslationText"></p>
-          <div class="translation-label">Sentence translation</div>
-          <p class="back-text" id="sentenceTranslationText"></p>
-        </div>
+        <button type="button" class="corner-btn practice" id="unknownButton" aria-label="Need more practice">❌</button>
+        <button type="button" class="corner-btn known" id="knownButton" aria-label="I know this">✅</button>
       </div>
 
       <div id="emptyState" class="empty-state" hidden>
         <h2>Alles gelernt! 🎉</h2>
         <p>Es gibt aktuell keine offenen Karten für dieses Level.</p>
-      </div>
-
-      <div class="actions">
-        <button type="button" class="practice" id="unknownButton">❌ Ich brauche Wiederholung</button>
-        <button type="button" class="known" id="knownButton">✅ Ich kenne dieses Wort</button>
       </div>
     </div>
 
@@ -170,6 +193,7 @@
       const totalCount = Number(<%= totalWords %>);
 
       const cardEl = document.getElementById('card');
+      const cardInner = document.getElementById('cardInner');
       const emptyEl = document.getElementById('emptyState');
       const wordEl = document.getElementById('wordText');
       const sentenceEl = document.getElementById('sentenceText');
@@ -197,8 +221,7 @@
         sentenceEl.textContent = card.sentence;
         wordTranslationEl.textContent = card.word_translation;
         sentenceTranslationEl.textContent = card.translation;
-        cardEl.querySelector('.front').hidden = false;
-        cardEl.querySelector('.back').hidden = true;
+        cardInner.classList.remove('is-flipped');
       }
 
       function showNextCard() {
@@ -231,7 +254,7 @@
           }
 
           if (result === 'correct' && data.isLearned) {
-            // remove card completely
+            // remove permanently
           } else if (result === 'correct') {
             currentCard.success_streak = data.successStreak;
             queue.push(currentCard);
@@ -246,10 +269,7 @@
       }
 
       flipButton.addEventListener('click', () => {
-        const front = cardEl.querySelector('.front');
-        const back = cardEl.querySelector('.back');
-        front.hidden = !front.hidden;
-        back.hidden = !back.hidden;
+        cardInner.classList.toggle('is-flipped');
       });
 
       document.getElementById('knownButton').addEventListener('click', () => submitAnswer('correct'));
