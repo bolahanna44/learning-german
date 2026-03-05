@@ -4,9 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Flashcards · <%= levelCode %></title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
     <style>
       :root {
         color-scheme: light dark;
@@ -82,7 +82,12 @@
       .card-face.back {
         transform: rotateY(180deg);
       }
-      .card h2 {
+      .line-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+      }
+      .line-item h2 {
         margin: 0;
         font-size: 2rem;
       }
@@ -90,6 +95,18 @@
       .back-text {
         font-size: 1.1rem;
         line-height: 1.5;
+        margin: 0;
+      }
+      .audio-btn {
+        border: none;
+        background: rgba(255, 255, 255, 0.2);
+        color: #fff;
+        border-radius: 999px;
+        width: 40px;
+        height: 40px;
+        font-size: 1.1rem;
+        cursor: pointer;
+        flex-shrink: 0;
       }
       .corner-btn {
         position: absolute;
@@ -102,6 +119,14 @@
         color: #fff;
         cursor: pointer;
         box-shadow: 0 15px 30px rgba(15, 23, 42, 0.2);
+      }
+      .corner-btn.practice {
+        left: -18px;
+        background: #f97316;
+      }
+      .corner-btn.known {
+        right: -18px;
+        background: #10b981;
       }
       .remove-btn {
         position: absolute;
@@ -117,14 +142,6 @@
         cursor: pointer;
         backdrop-filter: blur(8px);
         z-index: 4;
-      }
-      .corner-btn.practice {
-        left: -18px;
-        background: #f97316;
-      }
-      .corner-btn.known {
-        right: -18px;
-        background: #10b981;
       }
       .empty-state {
         text-align: center;
@@ -149,11 +166,17 @@
       </header>
 
       <div id="card" class="card" hidden>
+        <button type="button" class="remove-btn" id="removeButton" aria-label="Remove word">🗑️</button>
         <div class="card-inner" id="cardInner">
-          <button type="button" class="remove-btn" id="removeButton" aria-label="Remove word">🗑️</button>
           <div class="card-face front">
-            <h2 id="wordText"></h2>
-            <p class="sentence" id="sentenceText"></p>
+            <div class="line-item">
+              <h2 id="wordText"></h2>
+              <button type="button" class="audio-btn" id="wordSpeaker" aria-label="Play word audio">📣</button>
+            </div>
+            <div class="line-item">
+              <p class="sentence" id="sentenceText"></p>
+              <button type="button" class="audio-btn" id="sentenceSpeaker" aria-label="Play sentence audio">📣</button>
+            </div>
           </div>
           <div class="card-face back">
             <p class="back-text" id="wordTranslationText"></p>
@@ -187,6 +210,10 @@
       const sentenceTranslationEl = document.getElementById('sentenceTranslationText');
       const learnedCountEl = document.getElementById('learnedCount');
       const totalCountEl = document.getElementById('totalCount');
+      const wordSpeaker = document.getElementById('wordSpeaker');
+      const sentenceSpeaker = document.getElementById('sentenceSpeaker');
+      const removeButton = document.getElementById('removeButton');
+      const synth = window.speechSynthesis || null;
 
       function updateVisibility() {
         if (queue.length === 0) {
@@ -255,6 +282,14 @@
         }
       }
 
+      function speakGerman(text) {
+        if (!synth || !text) return;
+        synth.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'de-DE';
+        synth.speak(utterance);
+      }
+
       cardInner.addEventListener('click', () => {
         cardInner.classList.toggle('is-flipped');
       });
@@ -268,7 +303,7 @@
         submitAnswer('incorrect');
       });
 
-      document.getElementById('removeButton').addEventListener('click', async (event) => {
+      removeButton.addEventListener('click', async (event) => {
         event.stopPropagation();
         if (!currentCard) return;
         try {
@@ -291,6 +326,16 @@
         } catch (err) {
           console.error(err);
         }
+      });
+
+      wordSpeaker.addEventListener('click', (event) => {
+        event.stopPropagation();
+        speakGerman(wordEl.textContent || '');
+      });
+
+      sentenceSpeaker.addEventListener('click', (event) => {
+        event.stopPropagation();
+        speakGerman(sentenceEl.textContent || '');
       });
 
       if (queue.length === 0) {
