@@ -86,33 +86,10 @@
         margin: 0;
         font-size: 2rem;
       }
-      .sentence {
-        font-size: 1.1rem;
-        line-height: 1.5;
-      }
-      .translation-label {
-        margin-top: 8px;
-        font-size: 0.85rem;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        opacity: 0.85;
-      }
+      .sentence,
       .back-text {
         font-size: 1.1rem;
         line-height: 1.5;
-      }
-      .card button.flip {
-        position: absolute;
-        right: 24px;
-        top: 24px;
-        border: none;
-        background: rgba(255, 255, 255, 0.2);
-        color: #fff;
-        padding: 8px 16px;
-        border-radius: 999px;
-        cursor: pointer;
-        font-weight: 600;
-        z-index: 3;
       }
       .corner-btn {
         position: absolute;
@@ -158,20 +135,13 @@
 
       <div id="card" class="card" hidden>
         <div class="card-inner" id="cardInner">
-          <button class="flip" type="button" id="flipButton">Flip</button>
           <div class="card-face front">
             <h2 id="wordText"></h2>
             <p class="sentence" id="sentenceText"></p>
           </div>
           <div class="card-face back">
-            <div>
-              <div class="translation-label">English meaning</div>
-              <p class="back-text" id="wordTranslationText"></p>
-            </div>
-            <div>
-              <div class="translation-label">Sentence translation</div>
-              <p class="back-text" id="sentenceTranslationText"></p>
-            </div>
+            <p class="back-text" id="wordTranslationText"></p>
+            <p class="back-text" id="sentenceTranslationText"></p>
           </div>
         </div>
         <button type="button" class="corner-btn practice" id="unknownButton" aria-label="Need more practice">❌</button>
@@ -200,7 +170,6 @@
       const wordTranslationEl = document.getElementById('wordTranslationText');
       const sentenceTranslationEl = document.getElementById('sentenceTranslationText');
       const learnedCountEl = document.getElementById('learnedCount');
-      const flipButton = document.getElementById('flipButton');
 
       function updateVisibility() {
         if (queue.length === 0) {
@@ -221,7 +190,8 @@
         sentenceEl.textContent = card.sentence;
         wordTranslationEl.textContent = card.word_translation;
         sentenceTranslationEl.textContent = card.translation;
-        cardInner.classList.remove('is-flipped');
+        const startOnBack = Math.random() < 0.5;
+        cardInner.classList.toggle('is-flipped', startOnBack);
       }
 
       function showNextCard() {
@@ -268,12 +238,18 @@
         }
       }
 
-      flipButton.addEventListener('click', () => {
+      cardInner.addEventListener('click', () => {
         cardInner.classList.toggle('is-flipped');
       });
 
-      document.getElementById('knownButton').addEventListener('click', () => submitAnswer('correct'));
-      document.getElementById('unknownButton').addEventListener('click', () => submitAnswer('incorrect'));
+      document.getElementById('knownButton').addEventListener('click', (event) => {
+        event.stopPropagation();
+        submitAnswer('correct');
+      });
+      document.getElementById('unknownButton').addEventListener('click', (event) => {
+        event.stopPropagation();
+        submitAnswer('incorrect');
+      });
 
       if (queue.length === 0) {
         cardEl.hidden = true;
