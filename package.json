@@ -8,7 +8,8 @@
     "start": "node dist/app.js",
     "build": "tsc",
     "enrich:words": "ts-node src/scripts/enrichWords.ts",
-    "db:migrate": "knex migrate:latest"
+    "db:migrate": "knex migrate:latest",
+    "wordlist:tag": "ts-node src/scripts/tagPartsOfSpeech.ts"
   },
   "keywords": [],
   "author": "",
