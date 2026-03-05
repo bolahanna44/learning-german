@@ -3,6 +3,7 @@ import express from 'express';
 import session from 'express-session';
 import SQLiteStoreFactory from 'connect-sqlite3';
 import passport from './auth';
+import type { UserRecord } from './auth';
 import db from './db';
 import bcrypt from 'bcrypt';
 
@@ -10,20 +11,22 @@ const SQLiteStore = SQLiteStoreFactory(session);
 const app = express();
 const PORT = Number(process.env.PORT) || 4174;
 
-type LevelProgress = {
+type ProgressField = 'a11_progress' | 'a12_progress' | 'a21_progress' | 'a22_progress' | 'b11_progress' | 'b12_progress';
+
+type LevelDefinition = {
   code: string;
   title: string;
-  completion: number;
+  field: ProgressField;
   summary: string;
 };
 
-const levelProgress: LevelProgress[] = [
-  { code: 'A1.1', title: 'Grundlagen', completion: 45, summary: 'Alphabet, Grüßen, Zahlen und einfache Sätze.' },
-  { code: 'A1.2', title: 'Alltag', completion: 20, summary: 'Familie, Einkaufen, Uhrzeiten und Routinen.' },
-  { code: 'A2.1', title: 'Ausdruck erweitern', completion: 10, summary: 'Vergangenheit, Freizeit und Stadtleben.' },
-  { code: 'A2.2', title: 'Selbstständig sprechen', completion: 0, summary: 'Gesundheit, Reisen, Arbeitssituationen.' },
-  { code: 'B1.1', title: 'Kompetent berichten', completion: 0, summary: 'Meinungen begründen, Nachrichten verstehen.' },
-  { code: 'B1.2', title: 'Sicher kommunizieren', completion: 0, summary: 'Komplexere Texte, Vorbereitung auf Zertifikate.' },
+const levelDefinitions: LevelDefinition[] = [
+  { code: 'A1.1', title: 'Grundlagen', field: 'a11_progress', summary: 'Alphabet, Grüßen, Zahlen und einfache Sätze.' },
+  { code: 'A1.2', title: 'Alltag', field: 'a12_progress', summary: 'Familie, Einkaufen, Uhrzeiten und Routinen.' },
+  { code: 'A2.1', title: 'Ausdruck erweitern', field: 'a21_progress', summary: 'Vergangenheit, Freizeit und Stadtleben.' },
+  { code: 'A2.2', title: 'Selbstständig sprechen', field: 'a22_progress', summary: 'Gesundheit, Reisen, Arbeitssituationen.' },
+  { code: 'B1.1', title: 'Kompetent berichten', field: 'b11_progress', summary: 'Meinungen begründen, Nachrichten verstehen.' },
+  { code: 'B1.2', title: 'Sicher kommunizieren', field: 'b12_progress', summary: 'Komplexere Texte, Vorbereitung auf Zertifikate.' },
 ];
 
 
@@ -99,7 +102,12 @@ app.post('/register', async (req, res) => {
 });
 
 app.get('/dashboard', ensureAuthenticated, (req, res) => {
-  res.render('dashboard', { levels: levelProgress });
+    const user = req.user as UserRecord | undefined;
+  const levels = levelDefinitions.map((definition) => ({
+    ...definition,
+    completion: Number(user?.[definition.field] ?? 0),
+  }));
+  res.render('dashboard', { levels });
 });
 
 app.post('/logout', (req, res, next) => {

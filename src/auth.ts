@@ -7,6 +7,12 @@ export type UserRecord = {
   id: number;
   email: string;
   password_hash: string;
+  a11_progress: number;
+  a12_progress: number;
+  a21_progress: number;
+  a22_progress: number;
+  b11_progress: number;
+  b12_progress: number;
 };
 
 declare global {
