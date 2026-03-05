@@ -103,6 +103,21 @@
         cursor: pointer;
         box-shadow: 0 15px 30px rgba(15, 23, 42, 0.2);
       }
+      .remove-btn {
+        position: absolute;
+        top: 18px;
+        right: 18px;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        border: none;
+        background: rgba(15, 23, 42, 0.25);
+        color: #fff;
+        font-size: 1.2rem;
+        cursor: pointer;
+        backdrop-filter: blur(8px);
+        z-index: 4;
+      }
       .corner-btn.practice {
         left: -18px;
         background: #f97316;
@@ -135,6 +150,7 @@
 
       <div id="card" class="card" hidden>
         <div class="card-inner" id="cardInner">
+          <button type="button" class="remove-btn" id="removeButton" aria-label="Remove word">🗑️</button>
           <div class="card-face front">
             <h2 id="wordText"></h2>
             <p class="sentence" id="sentenceText"></p>
@@ -160,7 +176,7 @@
       let queue = deck.slice();
       let currentCard = null;
       let learnedCount = Number(<%= learnedWords %>);
-      const totalCount = Number(<%= totalWords %>);
+      let totalCount = Number(<%= totalWords %>);
 
       const cardEl = document.getElementById('card');
       const cardInner = document.getElementById('cardInner');
@@ -170,6 +186,7 @@
       const wordTranslationEl = document.getElementById('wordTranslationText');
       const sentenceTranslationEl = document.getElementById('sentenceTranslationText');
       const learnedCountEl = document.getElementById('learnedCount');
+      const totalCountEl = document.getElementById('totalCount');
 
       function updateVisibility() {
         if (queue.length === 0) {
@@ -249,6 +266,31 @@
       document.getElementById('unknownButton').addEventListener('click', (event) => {
         event.stopPropagation();
         submitAnswer('incorrect');
+      });
+
+      document.getElementById('removeButton').addEventListener('click', async (event) => {
+        event.stopPropagation();
+        if (!currentCard) return;
+        try {
+          const response = await fetch('/api/flashcards/remove', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ word: currentCard.word, level: levelCode }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            console.error(data.error || 'Failed to remove word');
+            return;
+          }
+          totalCount = data.stats.total;
+          totalCountEl.textContent = totalCount;
+          learnedCount = data.stats.learned;
+          learnedCountEl.textContent = learnedCount;
+          queue = queue.filter((entry) => entry.word !== currentCard.word);
+          showNextCard();
+        } catch (err) {
+          console.error(err);
+        }
       });
 
       if (queue.length === 0) {

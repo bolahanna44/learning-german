@@ -209,6 +209,22 @@ app.post('/api/flashcards/answer', ensureAuthenticated, (req, res) => {
   });
 });
 
+app.post('/api/flashcards/remove', ensureAuthenticated, (req, res) => {
+  const { word, level } = req.body ?? {};
+  if (!word || !level) {
+    return res.status(400).json({ error: 'word and level are required' });
+  }
+  const normalized = String(level).toLowerCase();
+  db.prepare('DELETE FROM words WHERE word = ? AND lower(word_level) = ?').run(word, normalized);
+  const stats = db
+    .prepare('SELECT COUNT(*) as total, SUM(CASE WHEN is_learned = 1 THEN 1 ELSE 0 END) as learned FROM words WHERE lower(word_level) = ?')
+    .get(normalized) as { total: number; learned: number | null };
+  return res.json({
+    removed: true,
+    stats: { total: stats.total, learned: stats.learned ?? 0 },
+  });
+});
+
 app.post('/logout', (req, res, next) => {
   req.logout(err => {
     if (err) {
