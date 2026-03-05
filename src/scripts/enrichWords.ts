@@ -53,7 +53,7 @@ const client = new OpenAI({ apiKey });
 const db = new Database('learning-german.sqlite');
 
 const wordsColumns = db.prepare('PRAGMA table_info(words)').all() as Array<{ name: string }>;
-const requiredColumns = ['sentence', 'translation', 'word_translation', 'word_type'];
+const requiredColumns = ['sentence', 'translation', 'word_translation', 'word_type', 'word_level'];
 for (const column of requiredColumns) {
   if (!wordsColumns.some((col) => col.name === column)) {
     throw new Error(`Column "${column}" missing on words table. Run \`npm run db:migrate\` first.`);
