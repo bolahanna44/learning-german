@@ -7,6 +7,7 @@ import OpenAI from 'openai';
 type WordRecord = {
   word: string;
   sentence: string;
+  translation: string;
 };
 
 const args = minimist(process.argv.slice(2));
@@ -48,22 +49,27 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS words (
     word TEXT PRIMARY KEY,
     sentence TEXT NOT NULL,
+    translation TEXT NOT NULL DEFAULT '',
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `);
 
+const wordsColumns = db.prepare("PRAGMA table_info(words)").all() as Array<{ name: string }>;
+if (!wordsColumns.some(col => col.name === 'translation')) {
+  db.exec('ALTER TABLE words ADD COLUMN translation TEXT NOT NULL DEFAULT ""');
+}
+
 const insertStatement = db.prepare(
-  `INSERT INTO words(word, sentence, updated_at) VALUES(?, ?, CURRENT_TIMESTAMP)
-   ON CONFLICT(word) DO UPDATE SET sentence=excluded.sentence, updated_at=CURRENT_TIMESTAMP`
+  `INSERT INTO words(word, sentence, translation, updated_at) VALUES(?, ?, ?, CURRENT_TIMESTAMP)
+   ON CONFLICT(word) DO UPDATE SET sentence=excluded.sentence, translation=excluded.translation, updated_at=CURRENT_TIMESTAMP`
 );
 
 async function main() {
   for (const word of slice) {
     try {
-      const sentence = await generateSentence(client, word);
-      const cleanedSentence = sentence.trim();
-      insertStatement.run(word, cleanedSentence);
-      console.log(`✔ Saved sentence for "${word}": ${cleanedSentence}`);
+      const { sentence, translation } = await generateSentence(client, word);
+      insertStatement.run(word, sentence.trim(), translation.trim());
+      console.log(`✔ Saved sentence for "${word}": ${sentence.trim()} => ${translation.trim()}`);
     } catch (error) {
       console.error(`✖ Failed for "${word}":`, (error as Error).message);
     }
@@ -98,8 +104,11 @@ function extractWords(text: string): string[] {
   return Array.from(matches);
 }
 
-async function generateSentence(client: OpenAI, word: string): Promise<string> {
-  const prompt = `Du bekommst ein deutsches Lexikoneintrag. Gib mir nur gültiges JSON der Form {"sentence":"..."} mit einem sehr häufigen, idiomatischen deutschen Satz, der das Wort "${word}" auf natürliche Weise enthält. Keine Erklärungen.`;
+async function generateSentence(client: OpenAI, word: string): Promise<{ sentence: string; translation: string }> {
+  const prompt = `Du bekommst ein deutsches Lexikoneintrag. Gib mir nur gültiges JSON der Form {"sentence":"...","translation":"..."}. 
+- "sentence": ein sehr häufiger, idiomatischer deutscher Satz mit dem Wort "${word}".
+- "translation": eine natürliche englische Übersetzung dieses Satzes.
+Keine Erklärungen.`;
   const response = await client.chat.completions.create({
     model: 'gpt-4o-mini',
     temperature: 0.2,
@@ -115,11 +124,11 @@ async function generateSentence(client: OpenAI, word: string): Promise<string> {
   }
 
   try {
-    const parsed: WordRecord = JSON.parse(content);
-    if (!parsed.sentence) {
-      throw new Error('JSON fehlte das Feld sentence');
+    const parsed = JSON.parse(content) as { sentence?: string; translation?: string };
+    if (!parsed.sentence || !parsed.translation) {
+      throw new Error('JSON fehlte sentence oder translation');
     }
-    return parsed.sentence;
+    return { sentence: parsed.sentence, translation: parsed.translation };
   } catch (err) {
     throw new Error(`Failed to parse JSON: ${(err as Error).message}. Raw: ${content}`);
   }

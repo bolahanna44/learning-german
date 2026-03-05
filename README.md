@@ -65,4 +65,4 @@ Parameters:
 - `--escape` – how many words to process in this batch (name left as requested).
 - `--offset` – how many words to skip before processing.
 
-Results are stored in the `words` table inside `learning-german.sqlite` (`word` + `sentence` columns, upserted per batch).
+Results are stored in the `words` table inside `learning-german.sqlite` (`word`, `sentence`, `translation`, `updated_at`).
