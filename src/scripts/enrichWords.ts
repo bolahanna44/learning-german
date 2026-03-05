@@ -29,70 +29,113 @@ if (!fs.existsSync(wordlistPath)) {
   throw new Error(`Word list not found at ${wordlistPath}`);
 }
 
-const wordList = fs
+const rawEntries = fs
   .readFileSync(wordlistPath, 'utf-8')
   .split(/\r?\n/)
   .map((line) => line.trim())
   .filter(Boolean);
 
-console.log(`Loaded ${wordList.length} words from ${wordlistPath}`);
+const wordEntries = rawEntries.map((line) => {
+  const [wordPart, typePart] = line.split('|');
+  const word = (wordPart ?? '').trim();
+  const wordType = (typePart ?? '').trim();
+  if (!word) {
+    throw new Error(`Malformed entry in word list: "${line}"`);
+  }
+  return { word, wordType };
+});
+
+const typeMap = new Map(wordEntries.map((entry) => [entry.word, entry.wordType]));
+
+console.log(`Loaded ${wordEntries.length} words from ${wordlistPath}`);
 
 const client = new OpenAI({ apiKey });
 const db = new Database('learning-german.sqlite');
 
 const wordsColumns = db.prepare('PRAGMA table_info(words)').all() as Array<{ name: string }>;
-if (wordsColumns.length === 0) {
-  throw new Error('Table \"words\" is missing. Run `npm run db:migrate` first.');
-}
-if (!wordsColumns.some((col) => col.name === 'translation')) {
-  throw new Error('Column \"translation\" missing on words table. Run `npm run db:migrate` first.');
+const requiredColumns = ['sentence', 'translation', 'word_translation', 'word_type'];
+for (const column of requiredColumns) {
+  if (!wordsColumns.some((col) => col.name === column)) {
+    throw new Error(`Column "${column}" missing on words table. Run \`npm run db:migrate\` first.`);
+  }
 }
 
 const insertBlank = db.prepare(
-  `INSERT INTO words(word, sentence, translation, updated_at)
-   VALUES(?, '', '', CURRENT_TIMESTAMP)
-   ON CONFLICT(word) DO NOTHING`
+  `INSERT INTO words(word, word_type, word_translation, sentence, translation, updated_at)
+   VALUES(?, ?, '', '', '', CURRENT_TIMESTAMP)
+   ON CONFLICT(word) DO UPDATE SET
+     word_type = CASE
+       WHEN words.word_type IS NULL OR words.word_type = '' THEN excluded.word_type
+       ELSE words.word_type
+     END`
 );
 
-const upsertSentence = db.prepare(
+const upsertEntry = db.prepare(
   `UPDATE words
      SET sentence = ?,
          translation = ?,
+         word_translation = ?,
+         word_type = CASE
+            WHEN word_type IS NULL OR word_type = '' THEN ?
+            ELSE word_type
+         END,
          updated_at = CURRENT_TIMESTAMP
    WHERE word = ?`
 );
 
-// Seed every word so we can track which entries still need sentences.
-for (const word of wordList) {
-  insertBlank.run(word);
+// Seed every word with its type so the DB stays aligned with the Wortliste.
+for (const entry of wordEntries) {
+  insertBlank.run(entry.word, entry.wordType);
 }
 
 const pendingRows = db
-  .prepare("SELECT word FROM words WHERE sentence = '' OR translation = '' ORDER BY word")
-  .all() as Array<{ word: string }>;
-const pendingWords = pendingRows.map((row) => row.word);
+  .prepare(
+    `SELECT word, word_type, word_translation, sentence, translation
+       FROM words
+      WHERE word_translation = ''
+         OR sentence = ''
+         OR translation = ''
+         OR word_type = ''
+      ORDER BY word`
+  )
+  .all() as Array<{
+  word: string;
+  word_type: string;
+  word_translation: string;
+  sentence: string;
+  translation: string;
+}>;
 
-if (pendingWords.length === 0) {
+if (pendingRows.length === 0) {
   console.log('No pending words. Everything is already populated.');
   process.exit(0);
 }
 
-const workSet = pendingWords.slice(offset, offset + escapeCount);
+const workSet = pendingRows.slice(offset, offset + escapeCount);
 console.log(
-  `Need sentences/translations for ${pendingWords.length} words. Processing ${workSet.length} (offset ${offset}).`
+  `Need enrichment for ${pendingRows.length} words. Processing ${workSet.length} (offset ${offset}).`
 );
 
 async function main() {
   for (let i = 0; i < workSet.length; i += batchSize) {
     const batch = workSet.slice(i, i + batchSize);
-    console.log(`\nBatch ${i / batchSize + 1}: ${batch.length} words`);
-    for (const word of batch) {
+    console.log(`\nBatch ${Math.floor(i / batchSize) + 1}: ${batch.length} words`);
+    for (const row of batch) {
+      const inferredType = row.word_type || typeMap.get(row.word) || 'word';
       try {
-        const { sentence, translation } = await withRetry(() => generateSentence(client, word), 3);
-        upsertSentence.run(sentence.trim(), translation.trim(), word);
-        console.log(`✔ ${word} => ${sentence.trim()} // ${translation.trim()}`);
+        const result = await withRetry(() => generateEntry(client, row.word, inferredType), 3);
+        upsertEntry.run(
+          result.sentence.trim(),
+          result.sentenceTranslation.trim(),
+          result.wordTranslation.trim(),
+          inferredType,
+          row.word
+        );
+        console.log(
+          `✔ ${row.word} (${inferredType}) => ${result.wordTranslation.trim()} | ${result.sentence.trim()} // ${result.sentenceTranslation.trim()}`
+        );
       } catch (error) {
-        console.error(`✖ ${word}: ${(error as Error).message}`);
+        console.error(`✖ ${row.word}: ${(error as Error).message}`);
       }
     }
   }
@@ -115,11 +158,45 @@ async function withRetry<T>(fn: () => Promise<T>, retries: number): Promise<T> {
   }
 }
 
-async function generateSentence(
+const TYPE_DESCRIPTIONS: Record<string, string> = {
+  noun: 'noun',
+  verb: 'verb',
+  adjective: 'adjective',
+  adverb: 'adverb',
+  preposition: 'preposition',
+  pronoun: 'pronoun',
+  conjunction: 'conjunction',
+  determiner: 'determiner or article',
+  expression: 'expression',
+  other: 'word',
+};
+
+const TYPE_GUIDANCE: Record<string, string> = {
+  noun: 'Return the singular translation for the noun and craft a sentence that clearly shows it as a subject or object.',
+  verb: 'Return the infinitive translation of the verb and use a naturally conjugated form inside the sentence.',
+  adjective: 'Return the base-form translation of the adjective and place it before a noun or after a copula in the sentence.',
+  adverb: 'Return the base adverb translation and feature it modifying a verb/adjective in the sentence.',
+  preposition: 'Return the equivalent preposition and include a sentence where it governs an appropriate object.',
+  pronoun: 'Return the closest English pronoun and show how it replaces a noun in the sentence.',
+  conjunction: 'Return the conjunction and build a sentence that links two clauses.',
+  determiner: 'Return the determiner/article meaning and show it modifying a noun.',
+  expression: 'Return an idiomatic translation and place it in conversational context.',
+  other: 'Return the best guess for the word meaning and showcase it naturally.',
+};
+
+async function generateEntry(
   clientInstance: OpenAI,
-  word: string
-): Promise<{ sentence: string; translation: string }> {
-  const prompt = `Return JSON {"sentence":"...","translation":"..."} where "sentence" is a common German sentence that naturally includes "${word}" and "translation" is the natural English translation of that sentence.`;
+  word: string,
+  wordType: string
+): Promise<{ wordTranslation: string; sentence: string; sentenceTranslation: string }> {
+  const normalizedType = wordType.toLowerCase();
+  const typeDescription = TYPE_DESCRIPTIONS[normalizedType] ?? 'word';
+  const guidance = TYPE_GUIDANCE[normalizedType] ?? TYPE_GUIDANCE.other;
+  const prompt = `You are enriching German vocabulary. The entry "${word}" is a ${typeDescription}. ${guidance}\n` +
+    'Return JSON: {"wordTranslation":"<English meaning of the word>","sentence":"<German sentence using the word>","sentenceTranslation":"<English translation of that sentence>"}. ' +
+    'Keep the word inside the German sentence exactly once if possible.';
+  // Prompt summary: Ask the model (in English) to provide the word meaning plus a German example sentence and its English translation, tailored to the word type.
+
   const response = await clientInstance.chat.completions.create({
     model: 'gpt-4o-mini',
     temperature: 0.2,
@@ -134,18 +211,22 @@ async function generateSentence(
     throw new Error('OpenAI returned empty content');
   }
 
-  let parsed: { sentence?: string; translation?: string };
+  let parsed: { wordTranslation?: string; sentence?: string; sentenceTranslation?: string };
   try {
     parsed = JSON.parse(content);
   } catch (err) {
     throw new Error(`Failed to parse JSON: ${(err as Error).message}. Raw: ${content}`);
   }
 
-  if (!parsed.sentence || !parsed.translation) {
-    throw new Error('Response missing sentence or translation');
+  if (!parsed.wordTranslation || !parsed.sentence || !parsed.sentenceTranslation) {
+    throw new Error('Response missing required fields');
   }
 
-  return { sentence: parsed.sentence, translation: parsed.translation };
+  return {
+    wordTranslation: parsed.wordTranslation,
+    sentence: parsed.sentence,
+    sentenceTranslation: parsed.sentenceTranslation,
+  };
 }
 
 main().catch((err) => {

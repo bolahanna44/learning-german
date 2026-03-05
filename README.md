@@ -66,4 +66,4 @@ Parameters:
 - `--offset` – how many pending words to skip before processing.
 - `--batch` – number of words to handle per chunk (default 5).
 
-The script first ensures every Wortliste entry exists in `words`, then fills in any rows missing sentences/translations (with retries + batching). Results live in `learning-german.sqlite` (`word`, `sentence`, `translation`, `updated_at`).
+The script first syncs every Wortliste entry (and its part of speech) into `words`, then fills in any rows missing the base word translation, the German sentence, or the English sentence translation (batched with retries). Columns now include `word`, `word_type`, `word_translation`, `sentence`, `translation`, `updated_at`.
