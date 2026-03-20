@@ -60,6 +60,32 @@
         border-radius: 16px;
         padding: 20px;
         background: #f8fafc;
+        transition: transform 200ms ease, box-shadow 200ms ease;
+      }
+      .level-card.is-link {
+        cursor: pointer;
+      }
+      .level-card.is-link:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
+      }
+      .word-progress {
+        margin-top: 8px;
+        font-size: 0.9rem;
+        color: #1e293b;
+      }
+      .flashcard-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 12px;
+        font-weight: 600;
+        color: #0ea5e9;
+        text-decoration: none;
+      }
+      .flashcard-link::after {
+        content: '\2192';
+        font-size: 0.95rem;
       }
       .level-head {
         display: flex;
@@ -108,7 +134,7 @@
       <p>Welcome to the Learning German dashboard. From here you can plug in future vocabulary or progress tracking features.</p>
       <ul class="levels">
         <% levels.forEach(function(level) { %>
-          <li class="level-card">
+          <li class="level-card <%= level.flashcardHref ? 'is-link' : '' %>" <%= level.flashcardHref ? `onclick=\"window.location='${level.flashcardHref}'\"` : '' %>>
             <div class="level-head">
               <span><%= level.code %> · <%= level.title %></span>
               <span><%= level.completion %>%</span>
@@ -117,6 +143,12 @@
               <div class="progress-bar" style="width:<%= level.completion %>%"></div>
             </div>
             <p><%= level.summary %></p>
+            <% if (level.wordStats && level.wordStats.total) { %>
+              <p class="word-progress">Wortschatz gelernt: <%= level.wordStats.learned %> / <%= level.wordStats.total %> (<%= level.learnedPercent %>%)</p>
+            <% } %>
+            <% if (level.flashcardHref) { %>
+              <a class="flashcard-link" href="<%= level.flashcardHref %>">Flashcards starten</a>
+            <% } %>
           </li>
         <% }) %>
       </ul>

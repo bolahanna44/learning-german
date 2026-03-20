@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Flashcards · <%= levelCode %></title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        margin: 0;
+        min-height: 100vh;
+        background: radial-gradient(circle at top, #e0f2fe, #ede9fe);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 32px;
+      }
+      .shell {
+        width: min(800px, 94vw);
+        background: #fff;
+        border-radius: 24px;
+        padding: 36px;
+        box-shadow: 0 30px 80px rgba(15, 23, 42, 0.18);
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        justify-content: space-between;
+        align-items: center;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 1.4rem;
+        color: #0f172a;
+      }
+      header a {
+        color: #0ea5e9;
+        text-decoration: none;
+        font-weight: 600;
+      }
+      .stats {
+        margin-top: 8px;
+        color: #475569;
+        font-size: 0.95rem;
+      }
+      .card {
+        margin-top: 30px;
+        border-radius: 24px;
+        background: linear-gradient(135deg, #0ea5e9, #6366f1);
+        color: #fff;
+        min-height: 320px;
+        position: relative;
+        box-shadow: 0 25px 50px rgba(14, 165, 233, 0.25);
+        perspective: 1200px;
+      }
+      .card-inner {
+        position: relative;
+        border-radius: 24px;
+        min-height: 320px;
+        transform-style: preserve-3d;
+        transition: transform 450ms ease;
+      }
+      .card-inner.is-flipped {
+        transform: rotateY(180deg);
+      }
+      .card-face {
+        position: absolute;
+        inset: 0;
+        padding: 32px;
+        backface-visibility: hidden;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+      .card-face.back {
+        transform: rotateY(180deg);
+      }
+      .line-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+      }
+      .line-item h2 {
+        margin: 0;
+        font-size: 2rem;
+      }
+      .sentence,
+      .back-text {
+        font-size: 1.1rem;
+        line-height: 1.5;
+        margin: 0;
+      }
+      .audio-btn {
+        border: none;
+        background: rgba(255, 255, 255, 0.2);
+        color: #fff;
+        border-radius: 999px;
+        width: 40px;
+        height: 40px;
+        font-size: 1.1rem;
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+      .corner-btn {
+        position: absolute;
+        bottom: -22px;
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        border: none;
+        font-size: 1.6rem;
+        color: #fff;
+        cursor: pointer;
+        box-shadow: 0 15px 30px rgba(15, 23, 42, 0.2);
+      }
+      .corner-btn.practice {
+        left: -18px;
+        background: #f97316;
+      }
+      .corner-btn.known {
+        right: -18px;
+        background: #10b981;
+      }
+      .remove-btn {
+        position: absolute;
+        top: 18px;
+        right: 18px;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        border: none;
+        background: rgba(15, 23, 42, 0.25);
+        color: #fff;
+        font-size: 1.2rem;
+        cursor: pointer;
+        backdrop-filter: blur(8px);
+        z-index: 4;
+      }
+      .empty-state {
+        text-align: center;
+        padding: 60px 0;
+        color: #475569;
+      }
+      @media (max-width: 640px) {
+        body { padding: 16px; }
+        .shell { padding: 24px; }
+        .card-face { padding: 24px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <div>
+          <h1>Flashcards · <%= levelCode %></h1>
+          <p class="stats">Gelernt: <span id="learnedCount"><%= learnedWords %></span> / <span id="totalCount"><%= totalWords %></span></p>
+        </div>
+        <a href="/dashboard">← Zurück zum Dashboard</a>
+      </header>
+
+      <div id="card" class="card" hidden>
+        <button type="button" class="remove-btn" id="removeButton" aria-label="Remove word">🗑️</button>
+        <div class="card-inner" id="cardInner">
+          <div class="card-face front">
+            <div class="line-item">
+              <h2 id="wordText"></h2>
+              <button type="button" class="audio-btn" id="wordSpeaker" aria-label="Play word audio">📣</button>
+            </div>
+            <div class="line-item">
+              <p class="sentence" id="sentenceText"></p>
+              <button type="button" class="audio-btn" id="sentenceSpeaker" aria-label="Play sentence audio">📣</button>
+            </div>
+          </div>
+          <div class="card-face back">
+            <p class="back-text" id="wordTranslationText"></p>
+            <p class="back-text" id="sentenceTranslationText"></p>
+          </div>
+        </div>
+        <button type="button" class="corner-btn practice" id="unknownButton" aria-label="Need more practice">❌</button>
+        <button type="button" class="corner-btn known" id="knownButton" aria-label="I know this">✅</button>
+      </div>
+
+      <div id="emptyState" class="empty-state" hidden>
+        <h2>Alles gelernt! 🎉</h2>
+        <p>Es gibt aktuell keine offenen Karten für dieses Level.</p>
+      </div>
+    </div>
+
+    <script>
+      const levelCode = '<%= levelCode %>';
+      const deck = <%- wordsJson %>;
+      const shuffle = (array) => {
+        const copy = array.slice();
+        for (let i = copy.length - 1; i > 0; i -= 1) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [copy[i], copy[j]] = [copy[j], copy[i]];
+        }
+        return copy;
+      };
+      let queue = shuffle(deck);
+      let currentCard = null;
+      let learnedCount = Number(<%= learnedWords %>);
+      let totalCount = Number(<%= totalWords %>);
+
+      const cardEl = document.getElementById('card');
+      const cardInner = document.getElementById('cardInner');
+      const emptyEl = document.getElementById('emptyState');
+      const wordEl = document.getElementById('wordText');
+      const sentenceEl = document.getElementById('sentenceText');
+      const wordTranslationEl = document.getElementById('wordTranslationText');
+      const sentenceTranslationEl = document.getElementById('sentenceTranslationText');
+      const learnedCountEl = document.getElementById('learnedCount');
+      const totalCountEl = document.getElementById('totalCount');
+      const wordSpeaker = document.getElementById('wordSpeaker');
+      const sentenceSpeaker = document.getElementById('sentenceSpeaker');
+      const removeButton = document.getElementById('removeButton');
+      const synth = window.speechSynthesis || null;
+
+      function updateVisibility() {
+        if (queue.length === 0) {
+          cardEl.hidden = true;
+          emptyEl.hidden = false;
+        } else {
+          cardEl.hidden = false;
+          emptyEl.hidden = true;
+        }
+      }
+
+      function renderCard(card) {
+        if (!card) {
+          updateVisibility();
+          return;
+        }
+        wordEl.textContent = card.word;
+        sentenceEl.textContent = card.sentence;
+        wordTranslationEl.textContent = card.word_translation;
+        sentenceTranslationEl.textContent = card.translation;
+        const startOnBack = Math.random() < 0.5;
+        cardInner.classList.toggle('is-flipped', startOnBack);
+      }
+
+      function showNextCard() {
+        if (queue.length === 0) {
+          currentCard = null;
+          updateVisibility();
+          return;
+        }
+        currentCard = queue.shift();
+        renderCard(currentCard);
+      }
+
+      async function submitAnswer(result) {
+        if (!currentCard) return;
+        try {
+          const response = await fetch('/api/flashcards/answer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ word: currentCard.word, level: levelCode, result }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            console.error(data.error || 'Failed to record answer');
+            return;
+          }
+
+          if (data.isLearned) {
+            learnedCount = data.stats.learned;
+            learnedCountEl.textContent = learnedCount;
+          }
+
+          if (result === 'correct' && data.isLearned) {
+            // remove permanently
+          } else if (result === 'correct') {
+            currentCard.success_streak = data.successStreak;
+            queue.push(currentCard);
+          } else {
+            currentCard.success_streak = 0;
+            queue.splice(Math.min(3, queue.length), 0, currentCard);
+          }
+          showNextCard();
+        } catch (err) {
+          console.error(err);
+        }
+      }
+
+      function speakGerman(text) {
+        if (!synth || !text) return;
+        synth.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'de-DE';
+        synth.speak(utterance);
+      }
+
+      cardInner.addEventListener('click', () => {
+        cardInner.classList.toggle('is-flipped');
+      });
+
+      document.getElementById('knownButton').addEventListener('click', (event) => {
+        event.stopPropagation();
+        submitAnswer('correct');
+      });
+      document.getElementById('unknownButton').addEventListener('click', (event) => {
+        event.stopPropagation();
+        submitAnswer('incorrect');
+      });
+
+      removeButton.addEventListener('click', async (event) => {
+        event.stopPropagation();
+        if (!currentCard) return;
+        try {
+          const response = await fetch('/api/flashcards/remove', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ word: currentCard.word, level: levelCode }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            console.error(data.error || 'Failed to remove word');
+            return;
+          }
+          totalCount = data.stats.total;
+          totalCountEl.textContent = totalCount;
+          learnedCount = data.stats.learned;
+          learnedCountEl.textContent = learnedCount;
+          queue = queue.filter((entry) => entry.word !== currentCard.word);
+          showNextCard();
+        } catch (err) {
+          console.error(err);
+        }
+      });
+
+      wordSpeaker.addEventListener('click', (event) => {
+        event.stopPropagation();
+        speakGerman(wordEl.textContent || '');
+      });
+
+      sentenceSpeaker.addEventListener('click', (event) => {
+        event.stopPropagation();
+        speakGerman(sentenceEl.textContent || '');
+      });
+
+      if (queue.length === 0) {
+        cardEl.hidden = true;
+        emptyEl.hidden = false;
+      } else {
+        cardEl.hidden = false;
+        emptyEl.hidden = true;
+        showNextCard();
+      }
+    </script>
+  </body>
+</html>
